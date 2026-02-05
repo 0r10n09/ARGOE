@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-GEMINI-1 Microcomputer Emulator - ARCADE EDITION
-A retro 8-bit CPU with multiple games
-
-Features:
-- Multiple games: Snake, Pong, Breakout, Racing
-- Persistent high score storage
-- Game selector menu
-- Enhanced visuals
-"""
 
 import os
 import time
@@ -229,17 +219,29 @@ class GeminiCPU:
         """Render the display using ANSI codes"""
         print("\033[H\033[J", end='', flush=True)
 
+        playfield_width = self.FB_WIDTH * 2
         border_color = Style.BRIGHT_CYAN
-        title_color = Style.BRIGHT_YELLOW
+        shadow_color = Style.BRIGHT_BLACK
         score_color = Style.BRIGHT_GREEN
         high_color = Style.BRIGHT_MAGENTA
         info_color = Style.BRIGHT_WHITE
+        title_palette = [
+            Style.BRIGHT_MAGENTA,
+            Style.BRIGHT_BLUE,
+            Style.BRIGHT_CYAN,
+            Style.BRIGHT_GREEN,
+            Style.BRIGHT_YELLOW,
+        ]
 
-        print(f"{border_color}╔{'═' * (self.FB_WIDTH * 2)}╗{Style.RESET}")
-        title_text = f" ◉ {title} ◉ "
-        padding = (self.FB_WIDTH * 2 - len(title_text)) // 2
-        print(f"{border_color}║{Style.RESET}{' ' * padding}{title_color}{Style.BOLD}{title_text}{Style.RESET}{border_color}{' ' * (self.FB_WIDTH * 2 - padding - len(title_text))}║{Style.RESET}")
-        print(f"{border_color}╠{'═' * (self.FB_WIDTH * 2)}╣{Style.RESET}")
+        print(f"{shadow_color}{'▄' * (playfield_width + 2)}{Style.RESET}")
+        print(f"{border_color}╔{'═' * playfield_width}╗{Style.RESET}")
+
+        title_plain = f"◉ {title} ◉"
+        title_colored = Style.gradient_text(title_plain, title_palette)
+        left_pad = max(0, (playfield_width - len(title_plain)) // 2)
+        right_pad = max(0, playfield_width - left_pad - len(title_plain))
+        print(f"{border_color}║{Style.RESET}{' ' * left_pad}{title_colored}{' ' * right_pad}{border_color}║{Style.RESET}")
+        print(f"{border_color}╠{'═' * playfield_width}╣{Style.RESET}")
 
         char_map = {
             0: '  ',
@@ -265,28 +267,73 @@ class GeminiCPU:
             for x in range(self.FB_WIDTH):
                 addr = self.VRAM_START + (y * self.FB_WIDTH) + x
                 val = self.memory[addr]
-                char = char_map.get(val, '██')
+                if val == DisplayChar.EMPTY:
+                    checker = (x + y) % 2 == 0
+                    char = f"{Style.DIM}{'. ' if checker else '  '}{Style.RESET}"
+                else:
+                    char = char_map.get(val, '██')
                 print(char, end='')
             print(f"{border_color}║{Style.RESET}")
 
-        print(f"{border_color}╠{'═' * (self.FB_WIDTH * 2)}╣{Style.RESET}")
+        print(f"{border_color}╠{'═' * playfield_width}╣{Style.RESET}")
 
         score = self.memory[self.SCORE_ADDR]
         high_score = self.memory[self.HIGH_SCORE_ADDR]
-        score_text = f" SCORE: {score_color}{score:<4}{Style.RESET}  HIGH: {high_color}{high_score:<4}{Style.RESET}"
-        padding = self.FB_WIDTH * 2 - len(score_text) + len(Style.RESET) * 3
-        print(f"{border_color}║{Style.RESET}{score_text}{' ' * (self.FB_WIDTH * 2 - 24)}{border_color}║{Style.RESET}")
+        score_label = " SCORE "
+        high_label = " HIGH "
+        visible_score_len = len(f"{score_label}{score:<4}   {high_label}{high_score:<4}")
+        pad_total = max(0, playfield_width - visible_score_len)
+        left_pad = pad_total // 2
+        right_pad = pad_total - left_pad
+        score_text = (
+            f"{Style.BRIGHT_WHITE}{score_label}{Style.RESET}"
+            f"{score_color}{score:<4}{Style.RESET}"
+            f"   {Style.BRIGHT_WHITE}{high_label}{Style.RESET}"
+            f"{high_color}{high_score:<4}{Style.RESET}"
+        )
+        print(f"{border_color}║{Style.RESET}{' ' * left_pad}{score_text}{' ' * right_pad}{border_color}║{Style.RESET}")
 
         if paused:
-            print(f"{border_color}║{Style.RESET}{Style.BRIGHT_RED}{Style.BLINK}{' PAUSED ':^{self.FB_WIDTH * 2}}{Style.RESET}{border_color}║{Style.RESET}")
+            paused_text = "== PAUSED =="
+            visible_paused_len = len(paused_text)
+            paused_pad = max(0, playfield_width - visible_paused_len)
+            paused_left = paused_pad // 2
+            paused_right = paused_pad - paused_left
+            paused_badge = f"{Style.BRIGHT_RED}{Style.BLINK}{paused_text}{Style.RESET}"
+            print(f"{border_color}║{Style.RESET}{' ' * paused_left}{paused_badge}{' ' * paused_right}{border_color}║{Style.RESET}")
 
         if info:
-            info_text = f" {info_color}{info}{Style.RESET} "
-            print(f"{border_color}║{Style.RESET}{info_text:<{self.FB_WIDTH * 2 - 1}}{border_color}║{Style.RESET}")
+            print(f"{border_color}║{Style.RESET}{info_color}{info:^{playfield_width}}{Style.RESET}{border_color}║{Style.RESET}")
 
-        print(f"{border_color}╠{'═' * (self.FB_WIDTH * 2)}╣{Style.RESET}")
-        print(f"{border_color}║{Style.RESET} {Style.DIM}ARROWS: Move{Style.RESET}  {Style.DIM}P: Pause{Style.RESET}  {Style.DIM}R: Reset{Style.RESET}  {Style.DIM}Q: Quit{Style.RESET}{' ' * (self.FB_WIDTH * 2 - 40)}{border_color}║{Style.RESET}")
-        print(f"{border_color}╚{'═' * (self.FB_WIDTH * 2)}╝{Style.RESET}")
+        print(f"{border_color}╠{'═' * playfield_width}╣{Style.RESET}")
+        
+        # Two-line centered controls display (max 32 chars wide)
+        labels = "Move    Pause   Reset   Quit"
+        keys = "←↑↓→      P       R       Q"
+        
+        # Calculate padding based on visible length (not including color codes)
+        visible_label_len = len(labels)
+        label_pad = max(0, playfield_width - visible_label_len)
+        label_left = label_pad // 2
+        label_right = label_pad - label_left
+        
+        visible_keys_len = len(keys)
+        keys_pad = max(0, playfield_width - visible_keys_len)
+        keys_left = keys_pad // 2
+        keys_right = keys_pad - keys_left
+        
+        print(
+            f"{border_color}║{Style.RESET}"
+            f"{' ' * label_left}{Style.DIM}{labels}{Style.RESET}{' ' * label_right}"
+            f"{border_color}║{Style.RESET}"
+        )
+        print(
+            f"{border_color}║{Style.RESET}"
+            f"{' ' * keys_left}{Style.DIM}{keys}{Style.RESET}{' ' * keys_right}"
+            f"{border_color}║{Style.RESET}"
+        )
+        print(f"{border_color}╚{'═' * playfield_width}╝{Style.RESET}")
+        print(f"{shadow_color}{'▀' * (playfield_width + 2)}{Style.RESET}")
 
     def step(self):
         """Execute one instruction"""
@@ -426,6 +473,24 @@ class GeminiCPU:
         self.reg['SP'] = (self.reg['SP'] + 1) & 0xFF
         low = self.memory[self.reg['SP']]
         return (high << 8) | low
+
+    def get_vram_pixel(self, x: int, y: int) -> int:
+        """Get pixel value from VRAM"""
+        if 0 <= x < self.FB_WIDTH and 0 <= y < self.FB_HEIGHT:
+            addr = self.VRAM_START + (y * self.FB_WIDTH) + x
+            return self.memory[addr]
+        return 0
+
+    def set_vram_pixel(self, x: int, y: int, value: int):
+        """Set pixel value in VRAM"""
+        if 0 <= x < self.FB_WIDTH and 0 <= y < self.FB_HEIGHT:
+            addr = self.VRAM_START + (y * self.FB_WIDTH) + x
+            self.memory[addr] = value & 0xFF
+
+    def clear_vram(self):
+        """Clear all of VRAM"""
+        for i in range(self.VRAM_SIZE):
+            self.memory[self.VRAM_START + i] = 0
 
     def load_program(self, program: List[int], start_addr: int = 0):
         """Load a program into memory"""
@@ -1261,26 +1326,181 @@ class InputHandler:
 
 
 class GEMINIShell:
-    """Simple Command Line Interface for GEMINI-1"""
+    """Enhanced Command Line Interface for GEMINI-1"""
     def __init__(self, cpu: GeminiCPU):
         self.cpu = cpu
         self.running = True
         self.history = []
 
+    def print_banner(self):
+        """Print enhanced shell banner"""
+        print("\033[2J\033[H")
+        print()
+        print(f"  {Style.BRIGHT_CYAN}╔{'═' * 60}╗{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}║{Style.RESET}  {Style.BRIGHT_WHITE}{Style.BOLD}GEMINI-1 MICROCOMPUTER - INTERACTIVE SHELL{Style.RESET}              {Style.BRIGHT_CYAN}║{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}║{Style.RESET}  {Style.DIM}8-bit CPU | 64KB RAM | 16x16 VRAM{Style.RESET}                      {Style.BRIGHT_CYAN}║{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}╠{'═' * 60}╣{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}║{Style.RESET}  {Style.BRIGHT_YELLOW}Type 'HELP' for available commands{Style.RESET}                    {Style.BRIGHT_CYAN}║{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}╚{'═' * 60}╝{Style.RESET}")
+        print()
+
+    def print_help(self):
+        """Print enhanced help message"""
+        commands = [
+            ("HELP", "Show this help message"),
+            ("STATUS", "Display CPU status and registers"),
+            ("MEM <addr>", "Read memory at address (hex or dec)"),
+            ("PEEK <addr>", "Peek at memory address (alias for MEM)"),
+            ("POKE <addr> <val>", "Write value to memory address"),
+            ("REGS", "Display all CPU registers"),
+            ("VRAM", "Display video RAM contents"),
+            ("RESET", "Reset CPU to initial state"),
+            ("RUN [addr]", "Execute program from address"),
+            ("STEP [n]", "Execute n instructions (default 1)"),
+            ("DUMP <start> <end>", "Dump memory range"),
+            ("FILL <start> <end> <val>", "Fill memory range with value"),
+            ("CLEAR", "Clear the screen"),
+            ("HISTORY", "Show command history"),
+            ("DEMO", "Run a demo pattern on VRAM"),
+            ("INFO", "Display system information"),
+            ("VER", "Display version information"),
+            ("EXIT", "Exit the shell"),
+        ]
+        
+        print(f"\n  {Style.BRIGHT_WHITE}{Style.BOLD}Available Commands:{Style.RESET}\n")
+        for cmd, desc in commands:
+            cmd_colored = f"{Style.BRIGHT_CYAN}{cmd:22s}{Style.RESET}"
+            print(f"    {cmd_colored} {Style.DIM}{desc}{Style.RESET}")
+        print()
+
+    def print_status(self):
+        """Print CPU status"""
+        print(f"\n  {Style.BRIGHT_WHITE}{Style.BOLD}CPU Status:{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}├─{Style.RESET} Running: {Style.BRIGHT_GREEN if self.cpu.running else Style.BRIGHT_RED}{self.cpu.running}{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}├─{Style.RESET} PC: {Style.BRIGHT_YELLOW}0x{self.cpu.reg['PC']:02X}{Style.RESET} ({self.cpu.reg['PC']})")
+        print(f"  {Style.BRIGHT_CYAN}├─{Style.RESET} SP: {Style.BRIGHT_YELLOW}0x{self.cpu.reg['SP']:02X}{Style.RESET} ({self.cpu.reg['SP']})")
+        print(f"  {Style.BRIGHT_CYAN}├─{Style.RESET} Zero Flag: {Style.BRIGHT_GREEN if self.cpu.zero_flag else Style.DIM}{self.cpu.zero_flag}{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}└─{Style.RESET} Carry Flag: {Style.BRIGHT_GREEN if self.cpu.carry_flag else Style.DIM}{self.cpu.carry_flag}{Style.RESET}")
+        print()
+
+    def print_registers(self):
+        """Print all registers"""
+        print(f"\n  {Style.BRIGHT_WHITE}{Style.BOLD}CPU Registers:{Style.RESET}")
+        for reg_name in ['A', 'B', 'C', 'D']:
+            val = self.cpu.reg[reg_name]
+            binary = format(val, '08b')
+            print(f"  {Style.BRIGHT_CYAN}{reg_name:3s}{Style.RESET} = {Style.BRIGHT_YELLOW}0x{val:02X}{Style.RESET} ({val:3d}) [{Style.DIM}{binary}{Style.RESET}]")
+        
+        pc_val = self.cpu.reg['PC']
+        sp_val = self.cpu.reg['SP']
+        print(f"  {Style.BRIGHT_CYAN}PC {Style.RESET} = {Style.BRIGHT_YELLOW}0x{pc_val:02X}{Style.RESET} ({pc_val:3d})")
+        print(f"  {Style.BRIGHT_CYAN}SP {Style.RESET} = {Style.BRIGHT_YELLOW}0x{sp_val:02X}{Style.RESET} ({sp_val:3d})")
+        print(f"  {Style.BRIGHT_CYAN}ZF {Style.RESET} = {Style.BRIGHT_GREEN if self.cpu.zero_flag else Style.BRIGHT_RED}{self.cpu.zero_flag}{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}CF {Style.RESET} = {Style.BRIGHT_GREEN if self.cpu.carry_flag else Style.BRIGHT_RED}{self.cpu.carry_flag}{Style.RESET}")
+        print()
+
+    def read_memory(self, addr: int):
+        """Read and display memory"""
+        if 0 <= addr < len(self.cpu.memory):
+            val = self.cpu.memory[addr]
+            print(f"  [{Style.BRIGHT_YELLOW}0x{addr:04X}{Style.RESET}] = {Style.BRIGHT_GREEN}0x{val:02X}{Style.RESET} ({val})")
+        else:
+            print(f"  {Style.BRIGHT_RED}ERROR: Address out of range{Style.RESET}")
+
+    def write_memory(self, addr: int, value: int):
+        """Write to memory"""
+        if 0 <= addr < len(self.cpu.memory):
+            self.cpu.memory[addr] = value & 0xFF
+            print(f"  {Style.BRIGHT_GREEN}✓{Style.RESET} Written {Style.BRIGHT_YELLOW}0x{value:02X}{Style.RESET} to [{Style.BRIGHT_YELLOW}0x{addr:04X}{Style.RESET}]")
+        else:
+            print(f"  {Style.BRIGHT_RED}ERROR: Address out of range{Style.RESET}")
+
+    def dump_memory(self, start: int, end: int):
+        """Dump memory range"""
+        print(f"\n  {Style.BRIGHT_WHITE}Memory Dump [{Style.BRIGHT_YELLOW}0x{start:04X}{Style.RESET} - {Style.BRIGHT_YELLOW}0x{end:04X}{Style.RESET}]:{Style.RESET}\n")
+        
+        for addr in range(start, min(end + 1, len(self.cpu.memory)), 16):
+            hex_str = f"{Style.BRIGHT_YELLOW}0x{addr:04X}{Style.RESET}  "
+            ascii_str = ""
+            
+            for i in range(16):
+                if addr + i <= end and addr + i < len(self.cpu.memory):
+                    byte = self.cpu.memory[addr + i]
+                    hex_str += f"{Style.BRIGHT_CYAN}{byte:02X}{Style.RESET} "
+                    ascii_str += chr(byte) if 32 <= byte < 127 else f"{Style.DIM}.{Style.RESET}"
+                else:
+                    hex_str += "   "
+                    ascii_str += " "
+                
+                if i == 7:
+                    hex_str += " "
+            
+            print(f"  {hex_str} {Style.DIM}|{Style.RESET} {ascii_str}")
+        print()
+
+    def display_vram(self):
+        """Display VRAM contents"""
+        print(f"\n  {Style.BRIGHT_WHITE}VRAM Display ({self.cpu.FB_WIDTH}x{self.cpu.FB_HEIGHT}):{Style.RESET}\n")
+        
+        print(f"  {Style.BRIGHT_CYAN}╔{'═' * (self.cpu.FB_WIDTH * 2)}╗{Style.RESET}")
+        for y in range(self.cpu.FB_HEIGHT):
+            line = f"  {Style.BRIGHT_CYAN}║{Style.RESET}"
+            for x in range(self.cpu.FB_WIDTH):
+                val = self.cpu.get_vram_pixel(x, y)
+                if val == 0:
+                    line += f"{Style.DIM}··{Style.RESET}"
+                else:
+                    line += f"{Style.BRIGHT_GREEN}{val:02X}{Style.RESET}"
+            line += f"{Style.BRIGHT_CYAN}║{Style.RESET}"
+            print(line)
+        print(f"  {Style.BRIGHT_CYAN}╚{'═' * (self.cpu.FB_WIDTH * 2)}╝{Style.RESET}\n")
+
+    def run_demo(self):
+        """Run a demo pattern on VRAM"""
+        print(f"  {Style.BRIGHT_GREEN}Running demo pattern...{Style.RESET}\n")
+        
+        for i in range(10):
+            self.cpu.clear_vram()
+            for y in range(self.cpu.FB_HEIGHT):
+                for x in range(self.cpu.FB_WIDTH):
+                    val = ((x + i) * (y + i)) % 16
+                    self.cpu.set_vram_pixel(x, y, val)
+            
+            self.cpu.render(title="DEMO MODE", paused=False)
+            time.sleep(0.2)
+        
+        print(f"\n  {Style.BRIGHT_GREEN}✓ Demo complete{Style.RESET}\n")
+
+    def show_info(self):
+        """Display system information"""
+        mem_size = len(self.cpu.memory)
+        vram_size = self.cpu.VRAM_SIZE
+        
+        print(f"\n  {Style.BRIGHT_WHITE}{Style.BOLD}System Information:{Style.RESET}")
+        print(f"  {Style.BRIGHT_CYAN}├─{Style.RESET} CPU: GEMINI-1 (8-bit)")
+        print(f"  {Style.BRIGHT_CYAN}├─{Style.RESET} Memory: {mem_size:,} bytes ({mem_size // 1024}KB)")
+        print(f"  {Style.BRIGHT_CYAN}├─{Style.RESET} VRAM: {vram_size} bytes ({self.cpu.FB_WIDTH}x{self.cpu.FB_HEIGHT})")
+        print(f"  {Style.BRIGHT_CYAN}├─{Style.RESET} VRAM Start: 0x{self.cpu.VRAM_START:04X}")
+        print(f"  {Style.BRIGHT_CYAN}├─{Style.RESET} Stack Top: 0x{self.cpu.STACK_TOP:02X}")
+        print(f"  {Style.BRIGHT_CYAN}└─{Style.RESET} Instruction Set: {len(Opcode)} opcodes")
+        print()
+
+    def parse_number(self, s: str) -> Optional[int]:
+        """Parse a number (hex or decimal)"""
+        try:
+            if s.upper().startswith('0X'):
+                return int(s, 16)
+            return int(s)
+        except ValueError:
+            return None
+
     def run(self):
         """Run the CLI session"""
-        print("\033[2J\033[H")
-        print(f"  +{Style.BRIGHT_BLACK}─{'─' * 46}─+{Style.RESET}")
-        print(f"  {Style.BRIGHT_BLACK}│{Style.RESET}      GEMINI-1 SYSTEM MONITOR v1.0       {Style.BRIGHT_BLACK}│{Style.RESET}")
-        print(f"  {Style.BRIGHT_BLACK}├{'─' * 46}┤{Style.RESET}")
-        print(f"  {Style.BRIGHT_BLACK}│{Style.RESET}  Type 'HELP' for commands or 'EXIT'     {Style.BRIGHT_BLACK}│{Style.RESET}")
-        print(f"  {Style.BRIGHT_BLACK}│{Style.RESET}  to return to menu                      {Style.BRIGHT_BLACK}│{Style.RESET}")
-        print(f"  +{Style.BRIGHT_BLACK}─{'─' * 46}─+{Style.RESET}")
-        print()
+        self.print_banner()
         
         try:
             while self.running:
-                prompt = "G1> "
+                prompt = f"  {Style.BRIGHT_GREEN}GEMINI>{Style.RESET} "
                 print(prompt, end='', flush=True)
                 
                 # Use standard input for shell instead of the game's InputHandler 
@@ -1294,54 +1514,135 @@ class GEMINIShell:
                 cmd = parts[0]
                 args = parts[1:]
                 
-                if cmd == 'EXIT':
+                if cmd == 'EXIT' or cmd == 'QUIT':
                     self.running = False
+                    print(f"\n  {Style.BRIGHT_CYAN}Exiting shell...{Style.RESET}\n")
+                
                 elif cmd == 'HELP':
-                    print(f"{Style.BRIGHT_CYAN}Available Commands:{Style.RESET}")
-                    print(f"  {Style.BRIGHT_GREEN}HELP{Style.RESET}  - Show this help")
-                    print(f"  {Style.BRIGHT_GREEN}EXIT{Style.RESET}  - Return to menu")
-                    print(f"  {Style.BRIGHT_GREEN}CLEAR{Style.RESET} - Clear screen")
-                    print(f"  {Style.BRIGHT_GREEN}REGS{Style.RESET} - Show registers")
-                    print(f"  {Style.BRIGHT_GREEN}MEM [addr]{Style.RESET} - Read memory")
-                    print(f"  {Style.BRIGHT_GREEN}POKE [addr] [val]{Style.RESET} - Write memory")
-                    print(f"  {Style.BRIGHT_GREEN}VER{Style.RESET} - Show version")
+                    self.print_help()
+                
+                elif cmd == 'STATUS':
+                    self.print_status()
+                
+                elif cmd == 'REGS':
+                    self.print_registers()
+                
+                elif cmd in ['MEM', 'PEEK']:
+                    if not args:
+                        print(f"  {Style.BRIGHT_RED}Usage: {cmd} <address>{Style.RESET}")
+                    else:
+                        addr = self.parse_number(args[0])
+                        if addr is not None:
+                            self.read_memory(addr)
+                        else:
+                            print(f"  {Style.BRIGHT_RED}ERROR: Invalid address{Style.RESET}")
+                
+                elif cmd == 'POKE':
+                    if len(args) < 2:
+                        print(f"  {Style.BRIGHT_RED}Usage: POKE <address> <value>{Style.RESET}")
+                    else:
+                        addr = self.parse_number(args[0])
+                        val = self.parse_number(args[1])
+                        if addr is not None and val is not None:
+                            self.write_memory(addr, val)
+                        else:
+                            print(f"  {Style.BRIGHT_RED}ERROR: Invalid address or value{Style.RESET}")
+                
+                elif cmd == 'DUMP':
+                    if len(args) < 2:
+                        print(f"  {Style.BRIGHT_RED}Usage: DUMP <start> <end>{Style.RESET}")
+                    else:
+                        start = self.parse_number(args[0])
+                        end = self.parse_number(args[1])
+                        if start is not None and end is not None:
+                            self.dump_memory(start, end)
+                        else:
+                            print(f"  {Style.BRIGHT_RED}ERROR: Invalid addresses{Style.RESET}")
+                
+                elif cmd == 'FILL':
+                    if len(args) < 3:
+                        print(f"  {Style.BRIGHT_RED}Usage: FILL <start> <end> <value>{Style.RESET}")
+                    else:
+                        start = self.parse_number(args[0])
+                        end = self.parse_number(args[1])
+                        val = self.parse_number(args[2])
+                        if start is not None and end is not None and val is not None:
+                            for addr in range(start, min(end + 1, len(self.cpu.memory))):
+                                self.cpu.memory[addr] = val & 0xFF
+                            print(f"  {Style.BRIGHT_GREEN}✓{Style.RESET} Filled memory range with {Style.BRIGHT_YELLOW}0x{val:02X}{Style.RESET}")
+                        else:
+                            print(f"  {Style.BRIGHT_RED}ERROR: Invalid parameters{Style.RESET}")
+                
+                elif cmd == 'VRAM':
+                    self.display_vram()
+                
+                elif cmd == 'RESET':
+                    self.cpu.reg = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'PC': 0, 'SP': self.cpu.STACK_TOP}
+                    self.cpu.zero_flag = False
+                    self.cpu.carry_flag = False
+                    self.cpu.running = True
+                    print(f"  {Style.BRIGHT_GREEN}✓ CPU reset{Style.RESET}")
+                
+                elif cmd == 'RUN':
+                    start_addr = 0
+                    if args:
+                        addr = self.parse_number(args[0])
+                        if addr is not None:
+                            start_addr = addr
+                    
+                    self.cpu.reg['PC'] = start_addr
+                    self.cpu.running = True
+                    print(f"  {Style.BRIGHT_GREEN}Running from address 0x{start_addr:04X}...{Style.RESET}")
+                    
+                    steps = 0
+                    while self.cpu.running and steps < 1000:
+                        self.cpu.step()
+                        steps += 1
+                    
+                    print(f"  {Style.BRIGHT_GREEN}✓ Executed {steps} instructions{Style.RESET}")
+                
+                elif cmd == 'STEP':
+                    n = 1
+                    if args:
+                        n_val = self.parse_number(args[0])
+                        if n_val is not None:
+                            n = n_val
+                    
+                    for _ in range(n):
+                        if self.cpu.running:
+                            self.cpu.step()
+                    
+                    print(f"  {Style.BRIGHT_GREEN}✓ Stepped {n} instruction(s){Style.RESET}")
+                    self.print_status()
+                
+                elif cmd == 'DEMO':
+                    self.run_demo()
+                
+                elif cmd == 'INFO':
+                    self.show_info()
+                
+                elif cmd == 'HISTORY':
+                    print(f"\n  {Style.BRIGHT_WHITE}Command History:{Style.RESET}\n")
+                    for i, h in enumerate(self.history[-20:], 1):
+                        print(f"  {Style.DIM}{i:3d}.{Style.RESET} {h}")
+                    print()
+                
                 elif cmd == 'CLEAR':
                     print("\033[2J\033[H")
+                    self.print_banner()
+                
                 elif cmd == 'VER':
-                    print(f"{Style.BRIGHT_YELLOW}GEMINI-1 MONITOR v1.0.0{Style.RESET}")
-                    print(f"{Style.DIM}(C) 1983 GEMINI CORPORATION{Style.RESET}")
-                elif cmd == 'REGS':
-                    print(f"{Style.BRIGHT_CYAN}CPU Registers:{Style.RESET}")
-                    for r, val in self.cpu.reg.items():
-                        print(f"  {Style.BRIGHT_WHITE}{r:>3}:{Style.RESET} 0x{val:02X} ({val:>3})")
-                    print(f"  {Style.BRIGHT_WHITE}ZF:{Style.RESET} {Style.BRIGHT_GREEN if self.cpu.zero_flag else Style.BRIGHT_RED}{self.cpu.zero_flag}{Style.RESET}")
-                    print(f"  {Style.BRIGHT_WHITE}CF:{Style.RESET} {Style.BRIGHT_GREEN if self.cpu.carry_flag else Style.BRIGHT_RED}{self.cpu.carry_flag}{Style.RESET}")
-                elif cmd == 'MEM' and args:
-                    try:
-                        addr = int(args[0], 16) if args[0].upper().startswith('0X') else int(args[0])
-                        if 0 <= addr < len(self.cpu.memory):
-                            val = self.cpu.memory[addr]
-                            print(f"{Style.BRIGHT_WHITE}MEM[{Style.BRIGHT_CYAN}0x{addr:04X}{Style.BRIGHT_WHITE}]:{Style.RESET} 0x{val:02X} = {val}")
-                        else:
-                            print(f"{Style.BRIGHT_RED}ERROR: Address out of range{Style.RESET}")
-                    except ValueError:
-                        print(f"{Style.BRIGHT_RED}ERROR: Invalid address{Style.RESET}")
-                elif cmd == 'POKE' and len(args) >= 2:
-                    try:
-                        addr = int(args[0], 16) if args[0].upper().startswith('0X') else int(args[0])
-                        val = int(args[1], 16) if args[1].upper().startswith('0X') else int(args[1])
-                        if 0 <= addr < len(self.cpu.memory):
-                            self.cpu.memory[addr] = val & 0xFF
-                            print(f"{Style.BRIGHT_GREEN}OK:{Style.RESET} Stored 0x{val & 0xFF:02X} at 0x{addr:04X}")
-                        else:
-                            print(f"{Style.BRIGHT_RED}ERROR: Address out of range{Style.RESET}")
-                    except ValueError:
-                        print(f"{Style.BRIGHT_RED}ERROR: Invalid value{Style.RESET}")
+                    print(f"\n  {Style.BRIGHT_YELLOW}GEMINI-1 MONITOR v2.0.0{Style.RESET}")
+                    print(f"  {Style.DIM}(C) 1983 GEMINI CORPORATION{Style.RESET}")
+                    print(f"  {Style.DIM}Enhanced Edition - 2024{Style.RESET}\n")
+                
                 else:
-                    print(f"{Style.BRIGHT_RED}Unknown command: {cmd}{Style.RESET}")
+                    print(f"  {Style.BRIGHT_RED}Unknown command: {cmd}{Style.RESET}")
+                    print(f"  {Style.DIM}Type 'HELP' for available commands{Style.RESET}")
+                
                 print()
         except KeyboardInterrupt:
-            pass
+            print(f"\n  {Style.BRIGHT_CYAN}Exiting shell...{Style.RESET}\n")
 
 def show_game_menu(high_score_manager: HighScoreManager) -> Optional[int]:
     """Show game selection menu with enhanced visuals"""
@@ -1355,13 +1656,14 @@ def show_game_menu(high_score_manager: HighScoreManager) -> Optional[int]:
     ]
 
     print("\033[2J\033[H")
-
-    print(f"{Style.BRIGHT_CYAN}{Style.BOLD}")
-    print("      +======================================+")
-    print("      |      G E M I N I - 1   A R C A D E   |")
-    print("      +======================================+")
-    print(f"{Style.RESET}")
-    print()
+    banner = Style.gradient_text(
+        " GEMINI-1  ARCADE ",
+        [Style.BRIGHT_MAGENTA, Style.BRIGHT_BLUE, Style.BRIGHT_CYAN, Style.BRIGHT_GREEN, Style.BRIGHT_YELLOW],
+    )
+    print(f"      {Style.BRIGHT_BLACK}{'▄' * 38}{Style.RESET}")
+    print(f"      {Style.BRIGHT_BLACK}▌{Style.RESET}{banner:<36}{Style.BRIGHT_BLACK}▐{Style.RESET}")
+    print(f"      {Style.BRIGHT_BLACK}{'▀' * 38}{Style.RESET}")
+    print(f"      {Style.DIM}Select a game to boot:{Style.RESET}\n")
 
     for i, (name, desc, color, icon) in enumerate(games, 1):
         high_score = high_score_manager.get_high_score(name)
@@ -1425,7 +1727,7 @@ def run_game(game: Game):
                     power = f"{Style.BRIGHT_YELLOW}{Style.BLINK}POWER!{Style.RESET}" if game.power_mode > 0 else ""
                     info_str = f"Lives: {game.lives} | Dots: {game.dots_remaining}/{game.total_dots} {power}"
                 elif isinstance(game, SnakeGame):
-                    info_str = f"Speed: {int(1/game.game_speed * 10)}	                "
+                    info_str = f"Speed: {int(1 / game.game_speed * 10)}"
 
                 game.cpu.render(title=game.get_name(), paused=paused, info=info_str)
 
